@@ -1,22 +1,409 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ar" dir="rtl">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>نظام استلام الطلبات الذكي - Smart Pickup</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap"
-      rel="stylesheet"
-    />
-    <meta property="og:image" content="https://bolt.new/static/og_default.png" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:image" content="https://bolt.new/static/og_default.png" />
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Tajawal', sans-serif; }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 15px rgba(16, 185, 129, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+        .ready-pulse { animation: pulse-ring 2s infinite; }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 min-h-screen">
+
+    <nav class="bg-slate-900 text-white p-4 shadow-md flex justify-between items-center">
+        <div class="font-bold text-lg flex items-center gap-2">
+            <span>☕</span>
+            <span>نظام الاستلام الذكي (MVP)</span>
+        </div>
+        <div class="flex gap-2">
+            <button onclick="switchView('merchant')" id="btn-merchant" class="px-4 py-1.5 rounded-lg bg-emerald-600 font-bold text-sm transition">شاشة المقهى / التاجر</button>
+            <button onclick="switchView('customer')" id="btn-customer" class="px-4 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 font-bold text-sm transition">شاشة العميل (محاكاة)</button>
+        </div>
+    </nav>
+
+    <!-- 1. واجهة التاجر -->
+    <main id="merchant-view" class="max-w-6xl mx-auto p-6">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-200">
+                <p class="text-gray-500 text-sm">الطلبات قيد التحضير الآن</p>
+                <p id="stat-active" class="text-3xl font-extrabold text-slate-800 mt-1">0</p>
+            </div>
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-200">
+                <p class="text-gray-500 text-sm">متوسط زمن التحضير اليوم</p>
+                <p id="stat-avg-time" class="text-3xl font-extrabold text-amber-600 mt-1">00:00</p>
+            </div>
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-200">
+                <p class="text-gray-500 text-sm">التحويل لتقييم قوقل مابز</p>
+                <p id="stat-reviews" class="text-3xl font-extrabold text-emerald-600 mt-1">0 عميل</p>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 flex flex-col items-center text-center">
+                <h2 class="text-xl font-bold mb-2">الكاشير - طلب جديد</h2>
+                <p class="text-sm text-gray-500 mb-6">اضغط لإصدار رقم طلب وعرض الباركود للعميل</p>
+                
+                <button onclick="createNewOrder()" class="w-full py-4 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-lg shadow-lg transition active:scale-95">
+                    + إصدار طلب جديد
+                </button>
+
+                <div id="qr-display-box" class="hidden mt-6 p-6 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-300 w-full flex flex-col items-center">
+                    <span class="text-sm font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full mb-2">امسح الكود لمتابعة طلبك</span>
+                    <h3 id="latest-order-num" class="text-4xl font-extrabold text-slate-900 mb-4">#101</h3>
+                    <div id="qrcode" class="bg-white p-3 rounded-xl shadow-sm"></div>
+                    <button onclick="openOrderAsCustomer()" class="mt-4 text-xs text-blue-600 underline hover:text-blue-800">
+                        فتح رابط هذا الطلب في شاشة العميل ↗
+                    </button>
+                </div>
+            </div>
+
+            <div class="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
+                <h2 class="text-xl font-bold mb-4">شاشة التحضير (المطبخ / الباريستا)</h2>
+                <div id="active-orders-list" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <p class="text-gray-400 text-sm col-span-2 text-center py-8">لا توجد طلبات قيد التحضير حالياً...</p>
+                </div>
+
+                <h3 class="text-lg font-bold mt-8 mb-3 pt-6 border-t">سجل زمن التحضير والتقييمات</h3>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-right text-sm">
+                        <thead class="bg-gray-50 text-gray-600">
+                            <tr>
+                                <th class="p-3 rounded-r-lg">رقم الطلب</th>
+                                <th class="p-3">مدة التحضير</th>
+                                <th class="p-3">الحالة</th>
+                                <th class="p-3 rounded-l-lg">تقييم قوقل</th>
+                            </tr>
+                        </thead>
+                        <tbody id="completed-orders-table" class="divide-y"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- 2. واجهة العميل -->
+    <main id="customer-view" class="hidden max-w-md mx-auto p-4 mt-4">
+        <div id="customer-card" class="bg-white rounded-3xl shadow-xl overflow-hidden border border-gray-100 transition-colors duration-500">
+            <div class="p-6 text-center border-b border-gray-100/20">
+                <div class="w-16 h-16 bg-slate-900 text-white rounded-2xl mx-auto flex items-center justify-center text-2xl font-bold shadow-md mb-3">
+                    ☕
+                </div>
+                <h1 class="font-bold text-lg">مقهى المختص (اسم المتجر)</h1>
+                <p class="text-xs opacity-75">نظام متابعة الطلبات الفوري</p>
+            </div>
+
+            <div class="p-8 text-center">
+                <p class="text-sm font-medium opacity-80 mb-1">رقم طلبك هو</p>
+                <div id="cust-order-num" class="text-6xl font-extrabold tracking-tight my-2">#---</div>
+                
+                <div id="status-preparing" class="mt-6">
+                    <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-100 text-amber-800 font-bold text-sm mb-4">
+                        <span class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping"></span>
+                        <span>طلبك قيد التحضير الآن...</span>
+                    </div>
+                    <p class="text-sm text-gray-500 mb-6">اضغط الزر أدناه لتفعيل التنبيهات والصوت لكي يصلك إشعار الجاهزية فوراً.</p>
+                    
+                    <button onclick="requestNotificationPermission()" id="btn-notify" class="w-full py-3.5 px-4 bg-emerald-600 text-white rounded-xl font-bold text-sm shadow-md hover:bg-emerald-700 transition flex items-center justify-center gap-2">
+                        <span>🔔 اضغط هنا لتفعيل التنبيه والصوت</span>
+                    </button>
+                </div>
+
+                <div id="status-ready" class="hidden mt-6">
+                    <div class="w-20 h-20 bg-white text-emerald-600 rounded-full mx-auto flex items-center justify-center text-4xl shadow-lg ready-pulse mb-4">
+                        ✓
+                    </div>
+                    <h2 class="text-2xl font-extrabold mb-2">طلبك جاهز للاستلام!</h2>
+                    <p class="text-sm opacity-90 mb-6">تفضل بالتوجه إلى منطقة الاستلام، وبالعافية مقدماً.</p>
+                    <button onclick="showRatingModal()" class="w-full py-3 bg-white text-emerald-700 font-bold rounded-xl shadow-md text-sm">
+                        تم الاستلام ← تقييم التجربة
+                    </button>
+                </div>
+
+                <div id="status-rating" class="hidden mt-4 text-gray-800 bg-white p-6 rounded-2xl shadow-inner">
+                    <h3 class="font-bold text-lg mb-1">كيف كانت تجربتك معنا؟</h3>
+                    <p class="text-xs text-gray-500 mb-4">رأيك يهمنا ويساعدنا على تقديم الأفضل دائماً</p>
+                    
+                    <div class="flex justify-center gap-2 text-3xl mb-5 cursor-pointer">
+                        <span onclick="rateOrder(1)" class="hover:scale-125 transition">⭐</span>
+                        <span onclick="rateOrder(2)" class="hover:scale-125 transition">⭐</span>
+                        <span onclick="rateOrder(3)" class="hover:scale-125 transition">⭐</span>
+                        <span onclick="rateOrder(4)" class="hover:scale-125 transition">⭐</span>
+                        <span onclick="rateOrder(5)" class="hover:scale-125 transition">⭐</span>
+                    </div>
+
+                    <div id="google-maps-cta" class="hidden">
+                        <p class="text-sm font-bold text-emerald-700 mb-3">سعداء جداً بأن الخدمة نالت إعجابك! 🌟</p>
+                        <a href="https://search.google.com/local/writereview?placeid=ChIJN1t_tDeuEmsRUsoyG83frY4" target="_blank" onclick="recordGoogleReviewClick()" class="block w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md text-sm transition">
+                            قيمنا على خرائط قوقل (Google Maps) 📍
+                        </a>
+                    </div>
+
+                    <div id="private-feedback" class="hidden text-right">
+                        <p class="text-xs font-bold text-rose-600 mb-2">نعتذر عن أي تقصير! أخبرنا بما حدث لنعالجه فوراً:</p>
+                        <textarea class="w-full border rounded-lg p-2 text-sm mb-2" rows="2" placeholder="اكتب ملاحظتك للإدارة..."></textarea>
+                        <button onclick="alert('تم إرسال ملاحظتك للإدارة بنجاح، شكراً لك.')" class="w-full py-2 bg-slate-800 text-white rounded-lg text-xs font-bold">إرسال للإدارة</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let orderCounter = 100;
+        let orders = [];
+        let currentCustomerOrderId = null;
+        let googleReviewClicks = 0;
+        let audioCtx = null;
+
+        function createNewOrder() {
+            orderCounter++;
+            const newOrder = {
+                id: orderCounter,
+                status: 'preparing',
+                createdAt: Date.now(),
+                readyAt: null,
+                prepSeconds: 0,
+                reviewed: false
+            };
+            orders.push(newOrder);
+            currentCustomerOrderId = newOrder.id;
+
+            document.getElementById('qr-display-box').classList.remove('hidden');
+            document.getElementById('latest-order-num').innerText = `#${newOrder.id}`;
+            
+            const qrContainer = document.getElementById('qrcode');
+            qrContainer.innerHTML = "";
+            const orderUrl = `${window.location.origin}${window.location.pathname}?order=${newOrder.id}`;
+            new QRCode(qrContainer, { text: orderUrl, width: 150, height: 150 });
+
+            renderMerchantDashboard();
+        }
+
+        function markOrderReady(orderId) {
+            const order = orders.find(o => o.id === orderId);
+            if (!order) return;
+
+            order.status = 'ready';
+            order.readyAt = Date.now();
+            order.prepSeconds = Math.floor((order.readyAt - order.createdAt) / 1000);
+
+            renderMerchantDashboard();
+
+            if (currentCustomerOrderId === orderId) {
+                updateCustomerScreen(order);
+                triggerCustomerAlert(order.id);
+            }
+        }
+
+        function requestNotificationPermission() {
+            // تهيئة نظام الصوت عند ضغطة الزر لتجاوز حظر المتصفح
+            try {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AudioContext();
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+            } catch (e) {}
+
+            if ("Notification" in window) {
+                Notification.requestPermission().then(permission => {
+                    const btn = document.getElementById('btn-notify');
+                    if (permission === "granted") {
+                        btn.innerHTML = "✅ تم تفعيل التنبيهات والصوت بنجاح";
+                        btn.className = "w-full py-3.5 px-4 bg-emerald-600 text-white rounded-xl font-bold text-sm shadow-md";
+                    } else {
+                        btn.innerHTML = "⚠️ تم السماح بالصوت (الإشعارات مرفوضة ولكن الصوت سيعمل)";
+                        btn.className = "w-full py-3.5 px-4 bg-amber-600 text-white rounded-xl font-bold text-sm shadow-md";
+                    }
+                });
+            } else {
+                alert("تم تفعيل الصوت بنجاح!");
+            }
+        }
+
+        function triggerCustomerAlert(orderId) {
+            if ("vibrate" in navigator) {
+                navigator.vibrate([400, 200, 400, 200, 600]);
+            }
+
+            try {
+                if (!audioCtx) {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    audioCtx = new AudioContext();
+                }
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+
+                const playTone = (freq, start, duration) => {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(freq, audioCtx.currentTime + start);
+                    
+                    gain.gain.setValueAtTime(0.3, audioCtx.currentTime + start);
+                    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + start + duration);
+                    
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    
+                    osc.start(audioCtx.currentTime + start);
+                    osc.stop(audioCtx.currentTime + start + duration);
+                };
+
+                playTone(523.25, 0.0, 0.2);
+                playTone(659.25, 0.25, 0.4);
+            } catch (e) {
+                console.log("Audio error:", e);
+            }
+
+            if ("Notification" in window && Notification.permission === "granted") {
+                new Notification(`طلبك #${orderId} جاهز! ☕`, {
+                    body: "تفضل باستلام طلبك من الكاشير. بالعافية مقدماً!",
+                });
+            }
+        }
+
+        function renderMerchantDashboard() {
+            const activeOrders = orders.filter(o => o.status === 'preparing');
+            const completedOrders = orders.filter(o => o.status !== 'preparing');
+
+            document.getElementById('stat-active').innerText = activeOrders.length;
+            document.getElementById('stat-reviews').innerText = `${googleReviewClicks} عميل`;
+
+            if (completedOrders.length > 0) {
+                const totalSec = completedOrders.reduce((acc, o) => acc + o.prepSeconds, 0);
+                const avgSec = Math.floor(totalSec / completedOrders.length);
+                document.getElementById('stat-avg-time').innerText = formatTime(avgSec);
+            }
+
+            const activeList = document.getElementById('active-orders-list');
+            if (activeOrders.length === 0) {
+                activeList.innerHTML = `<p class="text-gray-400 text-sm col-span-2 text-center py-8">لا توجد طلبات قيد التحضير حالياً...</p>`;
+            } else {
+                activeList.innerHTML = activeOrders.map(order => {
+                    const elapsed = Math.floor((Date.now() - order.createdAt) / 1000);
+                    return `
+                        <div class="p-4 rounded-xl border-2 border-amber-200 bg-amber-50/50 flex flex-col justify-between">
+                            <div class="flex justify-between items-center mb-3">
+                                <span class="text-2xl font-extrabold text-slate-900">#${order.id}</span>
+                                <span class="font-mono text-sm font-bold px-2.5 py-1 rounded bg-amber-200 text-amber-900">⏱ ${formatTime(elapsed)}</span>
+                            </div>
+                            <button onclick="markOrderReady(${order.id})" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-sm shadow transition">
+                                جاهز للاستلام ✅
+                            </button>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            const tableBody = document.getElementById('completed-orders-table');
+            tableBody.innerHTML = completedOrders.map(order => `
+                <tr>
+                    <td class="p-3 font-bold">#${order.id}</td>
+                    <td class="p-3 font-mono text-emerald-700 font-bold">${formatTime(order.prepSeconds)}</td>
+                    <td class="p-3"><span class="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded text-xs">مكتمل</span></td>
+                    <td class="p-3">${order.reviewed ? '⭐ تم التقييم' : '<span class="text-gray-400">بانتظار العميل</span>'}</td>
+                </tr>
+            `).join('');
+        }
+
+        function updateCustomerScreen(order) {
+            if (!order) return;
+            document.getElementById('cust-order-num').innerText = `#${order.id}`;
+            const card = document.getElementById('customer-card');
+
+            if (order.status === 'preparing') {
+                card.className = "bg-white rounded-3xl shadow-xl overflow-hidden border border-gray-100 text-gray-800";
+                document.getElementById('status-preparing').classList.remove('hidden');
+                document.getElementById('status-ready').classList.add('hidden');
+                document.getElementById('status-rating').classList.add('hidden');
+            } else if (order.status === 'ready') {
+                card.className = "bg-emerald-600 rounded-3xl shadow-xl overflow-hidden text-white";
+                document.getElementById('status-preparing').classList.add('hidden');
+                document.getElementById('status-ready').classList.remove('hidden');
+                document.getElementById('status-rating').classList.add('hidden');
+                
+                setTimeout(() => {
+                    if (!order.reviewed) showRatingModal();
+                }, 10000);
+            }
+        }
+
+        function showRatingModal() {
+            document.getElementById('status-ready').classList.add('hidden');
+            document.getElementById('status-rating').classList.remove('hidden');
+        }
+
+        function rateOrder(stars) {
+            if (stars >= 4) {
+                document.getElementById('google-maps-cta').classList.remove('hidden');
+                document.getElementById('private-feedback').classList.add('hidden');
+            } else {
+                document.getElementById('private-feedback').classList.remove('hidden');
+                document.getElementById('google-maps-cta').classList.add('hidden');
+            }
+        }
+
+        function recordGoogleReviewClick() {
+            googleReviewClicks++;
+            const order = orders.orders.find(o => o.id === currentCustomerOrderId);
+            if (order) order.reviewed = true;
+            renderMerchantDashboard();
+        }
+
+        function formatTime(seconds) {
+            const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+            const s = (seconds % 60).toString().padStart(2, '0');
+            return `${m}:${s}`;
+        }
+
+        function switchView(view) {
+            if (view === 'merchant') {
+                document.getElementById('merchant-view').classList.remove('hidden');
+                document.getElementById('customer-view').classList.add('hidden');
+                document.getElementById('btn-merchant').classList.replace('bg-slate-700', 'bg-emerald-600');
+                document.getElementById('btn-customer').classList.replace('bg-emerald-600', 'bg-slate-700');
+            } else {
+                document.getElementById('merchant-view').classList.add('hidden');
+                document.getElementById('customer-view').classList.remove('hidden');
+                document.getElementById('btn-customer').classList.replace('bg-slate-700', 'bg-emerald-600');
+                document.getElementById('btn-merchant').classList.replace('bg-emerald-600', 'bg-slate-700');
+                const order = orders.find(o => o.id === currentCustomerOrderId);
+                updateCustomerScreen(order);
+            }
+        }
+
+        function openOrderAsCustomer() {
+            switchView('customer');
+        }
+
+        setInterval(() => {
+            if (orders.some(o => o.status === 'preparing')) {
+                renderMerchantDashboard();
+            }
+        }, 1000);
+
+        window.onload = () => {
+            const params = new URLSearchParams(window.location.search);
+            const orderParam = params.get('order');
+            if (orderParam) {
+                currentCustomerOrderId = parseInt(orderParam);
+                switchView('customer');
+            }
+        };
+    </script>
+</body>
 </html>
+
+<h1></h1>
