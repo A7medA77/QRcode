@@ -1,14 +1,30 @@
 import { useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { CheckCircle2, Clock, Coffee, Loader2, Plus, Star, Timer, TrendingUp } from 'lucide-react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  Coffee,
+  Copy,
+  Link2,
+  Loader2,
+  Plus,
+  Star,
+  Timer,
+  TrendingUp,
+} from 'lucide-react';
 import { useOrders } from '@/hooks/useOrders';
 import { useTick } from '@/hooks/useTick';
 import {
+  clearBaseUrl,
   createOrder,
   elapsedSeconds,
   formatTime,
+  getBaseUrl,
+  isPublicBaseUrl,
   markOrderReady,
   orderUrl,
+  setBaseUrl,
   type Order,
 } from '@/lib/orders';
 
@@ -17,6 +33,10 @@ export default function MerchantView({ onOpenCustomer }: { onOpenCustomer: (id: 
   const [latestOrder, setLatestOrder] = useState<Order | null>(null);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [showLinkSettings, setShowLinkSettings] = useState(false);
+  const [baseUrlInput, setBaseUrlInput] = useState(() => getBaseUrl());
+  const [baseUrlNotice, setBaseUrlNotice] = useState<string | null>(null);
   const creatingRef = useRef(false);
 
   useTick(orders.some((o) => o.status === 'preparing'));
@@ -37,6 +57,8 @@ export default function MerchantView({ onOpenCustomer }: { onOpenCustomer: (id: 
   }
 
   const activeOrders = orders.filter((o) => o.status === 'preparing');
+  const baseUrl = getBaseUrl();
+  const baseIsPublic = isPublicBaseUrl(baseUrl);
   const completedOrders = orders
     .filter((o) => o.status === 'completed' || o.status === 'ready')
     .sort((a, b) => b.id - a.id);
@@ -107,6 +129,57 @@ export default function MerchantView({ onOpenCustomer }: { onOpenCustomer: (id: 
             <p className="mt-3 text-xs font-bold text-rose-600">{createError}</p>
           )}
 
+          <button
+            onClick={() => {
+              setBaseUrlInput(getBaseUrl());
+              setBaseUrlNotice(null);
+              setShowLinkSettings((v) => !v);
+            }}
+            className="mt-4 inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700"
+          >
+            <Link2 className="w-3.5 h-3.5" />
+            إعدادات رابط رمز QR
+          </button>
+
+          {showLinkSettings && (
+            <div className="mt-3 w-full p-4 bg-gray-50 rounded-xl border border-gray-200 text-right animate-fade-in">
+              <label className="block text-xs font-bold text-gray-600 mb-2">
+                الرابط الذي يفتحه العميل عند مسح الرمز (يجب أن يكون رابط موقعك المنشور)
+              </label>
+              <input
+                value={baseUrlInput}
+                onChange={(e) => setBaseUrlInput(e.target.value)}
+                dir="ltr"
+                className="w-full border border-gray-300 rounded-lg p-2 text-xs font-mono mb-2 focus:outline-none focus:ring-2 focus:ring-slate-300"
+                placeholder="https://your-site.example.com"
+              />
+              {baseUrlNotice && (
+                <p className="text-xs font-bold mb-2 text-emerald-700">{baseUrlNotice}</p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setBaseUrl(baseUrlInput);
+                    setBaseUrlNotice('تم حفظ الرابط. أعد إصدار الطلب ليظهر رمز QR الجديد.');
+                  }}
+                  className="flex-1 py-2 bg-slate-900 text-white rounded-lg text-xs font-bold hover:bg-slate-800 transition"
+                >
+                  حفظ الرابط
+                </button>
+                <button
+                  onClick={() => {
+                    clearBaseUrl();
+                    setBaseUrlInput(getBaseUrl());
+                    setBaseUrlNotice('تمت العودة لرابط هذه الصفحة.');
+                  }}
+                  className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-lg text-xs font-bold hover:bg-gray-300 transition"
+                >
+                  استخدام رابط هذه الصفحة
+                </button>
+              </div>
+            </div>
+          )}
+
           {latestOrder && (
             <div className="mt-6 p-6 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-300 w-full flex flex-col items-center animate-fade-in">
               <span className="text-sm font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full mb-2">
@@ -116,11 +189,41 @@ export default function MerchantView({ onOpenCustomer }: { onOpenCustomer: (id: 
                 #{latestOrder.id}
               </h3>
               <div className="bg-white p-3 rounded-xl shadow-sm">
-                <QRCodeSVG value={orderUrl(latestOrder.id)} size={150} />
+                <QRCodeSVG value={orderUrl(latestOrder.id)} size={180} />
               </div>
+              {!baseIsPublic && (
+                <div className="mt-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold flex items-start gap-2 text-right">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>
+                    هذا الرابط محلي ولن يعمل على جوال العميل. انشر الموقع، ثم أدخل رابط الموقع
+                    المنشور من «إعدادات رابط رمز QR».
+                  </span>
+                </div>
+              )}
+              <p
+                dir="ltr"
+                className="mt-3 w-full truncate text-center text-[11px] font-mono text-gray-500"
+              >
+                {orderUrl(latestOrder.id)}
+              </p>
+              <button
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(orderUrl(latestOrder.id));
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  } catch {
+                    // clipboard unavailable
+                  }
+                }}
+                className="mt-2 inline-flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-800"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                {copied ? 'تم نسخ الرابط' : 'نسخ رابط الطلب'}
+              </button>
               <button
                 onClick={() => onOpenCustomer(latestOrder.id)}
-                className="mt-4 text-xs text-blue-600 underline hover:text-blue-800"
+                className="mt-2 text-xs text-blue-600 underline hover:text-blue-800"
               >
                 فتح رابط هذا الطلب في شاشة العميل
               </button>

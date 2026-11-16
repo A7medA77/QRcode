@@ -27,9 +27,62 @@ export function elapsedSeconds(order: Order): number {
   return order.prep_seconds;
 }
 
+const BASE_URL_STORAGE_KEY = 'smart-pickup-base-url';
+
+function currentOriginUrl(): string {
+  return window.location.origin + window.location.pathname;
+}
+
+function savedBaseUrl(): string | null {
+  try {
+    return localStorage.getItem(BASE_URL_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function getBaseUrl(): string {
+  return savedBaseUrl() ?? currentOriginUrl();
+}
+
+export function isPublicBaseUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'https:') return false;
+    const h = u.hostname;
+    return (
+      !h.startsWith('192.168.') &&
+      !h.startsWith('10.') &&
+      !h.startsWith('172.') &&
+      h !== 'localhost' &&
+      h !== '127.0.0.1' &&
+      !h.endsWith('.local')
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function setBaseUrl(url: string): void {
+  try {
+    const clean = url.trim().replace(/\/+$/, '');
+    const withPath = clean.endsWith('index.html') ? clean : `${clean}/index.html`;
+    localStorage.setItem(BASE_URL_STORAGE_KEY, withPath);
+  } catch {
+    // storage unavailable
+  }
+}
+
+export function clearBaseUrl(): void {
+  try {
+    localStorage.removeItem(BASE_URL_STORAGE_KEY);
+  } catch {
+    // storage unavailable
+  }
+}
+
 export function orderUrl(orderId: number): string {
-  const base = window.location.origin + window.location.pathname;
-  return `${base}?order=${orderId}`;
+  return `${getBaseUrl()}?order=${orderId}`;
 }
 
 export async function createOrder(): Promise<Order | null> {
